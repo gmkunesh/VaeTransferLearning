@@ -7,7 +7,10 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import f1_score
 
+# list of training results after each epoch
+epoch_results = []
 
 # Hyperparameters
 batch_size = 64
@@ -47,9 +50,53 @@ model = SimpleCNN()
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
+# Function to evaluate a model
+def evaluate_model(model, loader):
+    model.eval()
+    all_preds = []
+    all_labels = []
+
+    with torch.no_grad():
+        for images, labels in loader:
+            outputs = model(images)
+            _, preds = torch.max(outputs, 1)
+            all_preds.extend(preds.numpy())
+            all_labels.extend(labels.numpy())
+
+    return np.array(all_labels), np.array(all_preds)
+
+# Filter dataset for digits 0, 1, and 2
+class FilteredMNIST(datasets.MNIST):
+    def __init__(self, *args, allowed_digits=None, **kwargs):
+        kwargs['download'] = True  # Ensure download is enabled
+        super().__init__(*args, **kwargs)
+        if allowed_digits is not None:
+            mask = [label in allowed_digits for label in self.targets]
+            self.data = self.data[mask]
+            self.targets = self.targets[mask]
+
+# Create a filtered test dataset for digits 0, 1, and 2
+test_dataset_filtered = FilteredMNIST(root='./data', train=False, transform=transform, allowed_digits=[0, 1, 2])
+test_loader_filtered = DataLoader(test_dataset_filtered, batch_size=batch_size, shuffle=False)
+
+
+# test result
+def test_results(labels, preds):
+    
+    # accuracy
+    correct = (labels == preds).sum().item()
+    total = labels.shape[0]
+    accuracy = correct / total * 100
+
+    # f1 score
+    f1 = f1_score(labels, preds, average='weighted')
+    return accuracy, f1
+
+
 # Training loop
 def train(model, loader, criterion, optimizer):
     model.train()
+    results = []
     for epoch in range(epochs):
         running_loss = 0.0
         for images, labels in loader:
@@ -61,21 +108,20 @@ def train(model, loader, criterion, optimizer):
             running_loss += loss.item()
         print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(loader)}")
 
+        # save model eval after each epoch
+        labels, preds = evaluate_model(model, test_loader_filtered)
+        accuracy, f1 = test_results(labels, preds)
+        results.append((accuracy, f1))
+    
+    # Save results for this epoch call
+    epoch_results.append(results)
+
+
 # Train the model
 train(model, train_loader, criterion, optimizer)
 # Save the initial model
 torch.save(model.state_dict(), "initial_mnist_cnn.pth")
 
-
-# Filter dataset for digits 0, 1, and 2
-class FilteredMNIST(datasets.MNIST):
-    def __init__(self, *args, allowed_digits=None, **kwargs):
-        kwargs['download'] = True  # Ensure download is enabled
-        super().__init__(*args, **kwargs)
-        if allowed_digits is not None:
-            mask = [label in allowed_digits for label in self.targets]
-            self.data = self.data[mask]
-            self.targets = self.targets[mask]
 
 allowed_digits = [0, 1, 2]
 train_dataset_3digits = FilteredMNIST(root='./data', train=True, transform=transform, allowed_digits=allowed_digits)
@@ -112,37 +158,19 @@ train(model, train_loader_grouped, criterion, optimizer)
 torch.save(model.state_dict(), "fine_tuned_grouped.pth")
 
 
-# Create a filtered test dataset for digits 0, 1, and 2
-test_dataset_filtered = FilteredMNIST(root='./data', train=False, transform=transform, allowed_digits=[0, 1, 2])
-test_loader_filtered = DataLoader(test_dataset_filtered, batch_size=batch_size, shuffle=False)
-
-# Function to evaluate a model
-def evaluate_model(model, loader):
-    model.eval()
-    all_preds = []
-    all_labels = []
-
-    with torch.no_grad():
-        for images, labels in loader:
-            outputs = model(images)
-            _, preds = torch.max(outputs, 1)
-            all_preds.extend(preds.numpy())
-            all_labels.extend(labels.numpy())
-
-    return np.array(all_labels), np.array(all_preds)
-
 # Function to plot test results
 def plot_test_results(labels, preds, model_name):
-    correct = (labels == preds).sum().item()
-    total = labels.shape[0]
-    accuracy = correct / total * 100
+    accuracy, f1 = test_results(labels, preds)
+
     print(f"{model_name} Test Accuracy: {accuracy:.2f}%")
+    print(f"{model_name} F1 Score: {f1}")
     
     # Optional: You could also create a bar chart of accuracy for visual representation
     plt.bar([model_name], [accuracy], color='blue')
     plt.ylabel('Accuracy (%)')
     plt.title('Test Accuracy of Models')
-    plt.show()
+    # plt.show()
+    plt.savefig(f"{model_name}_results.png")
 
 # Evaluate Model 1 (3-digit model)
 model_3digits = SimpleCNN()
@@ -158,3 +186,23 @@ model_grouped.load_state_dict(torch.load("fine_tuned_grouped.pth"))
 labels_grouped, preds_grouped = evaluate_model(model_grouped, test_loader_filtered)
 plot_test_results(labels_grouped, preds_grouped, "Grouped Model")
 
+# print model results of each epoch
+call = 1
+for result in epoch_results:
+    print(f"\nTraining call {call}")
+    call += 1
+
+    epoch = 1
+    for accuracy, f1 in result:
+        print(f"Epoch {epoch}- Test Accuracy: {accuracy:.2f}%, F1 Score: {f1}")
+        epoch += 1
+
+# f1 plot
+training_call = 3
+for i in range(training_call):
+    f1_scores = [epoch_data[0] for epoch_data in epoch_results[i]]
+    plt.plot(epochs, f1_scores, label='F1 Score')
+    plt.xlabel('Epoch')
+    plt.ylabel('F1 Score')
+    plt.title('F1 Score for Each Epoch)')
+    plt.savefig(f"training_call_{i+1}_f1.png")
