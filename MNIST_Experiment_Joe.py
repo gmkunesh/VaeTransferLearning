@@ -117,6 +117,7 @@ class JoesDataset(torch.utils.data.Dataset):
 
 # Joe's section for loading in Odds for End2End Finetuning
 odds_data = torch.load('odd_Dataset_train.pt')
+odds_testing = torch.load('odd_Dataset_test.pt')
 core_data = torch.load('MNISTFull_Coreset.pt')
 
 # Relabel data for odd set
@@ -131,6 +132,18 @@ for i in range(len(odds_data)):
         odds_data.targets[i] = 3
     elif odds_data.targets[i] == 9:
         odds_data.targets[i] = 4
+
+for i in range(len(odds_testing)):
+    if odds_testing.targets[i] == 1:
+        odds_testing.targets[i] = 0
+    elif odds_testing.targets[i] == 3:
+        odds_testing.targets[i] = 1
+    elif odds_testing.targets[i] == 5:
+        odds_testing.targets[i] = 2
+    elif odds_testing.targets[i] == 7:
+        odds_testing.targets[i] = 3
+    elif odds_testing.targets[i] == 9:
+        odds_testing.targets[i] = 4
 
     # if odds_dataset.targets[i] % 2 == 1:
     #     odds_dataset.targets[i] = np.floor(odds_dataset.targets[i]/2)
@@ -154,6 +167,9 @@ for i in range(len(core_data)):
 Joetransform = transforms.Compose(transforms.Normalize((0.5,), (0.5,)))
 odds_dataset = JoesDataset(data = odds_data.tensors[0], targets=odds_data.targets, transform=Joetransform)
 core_dataset = JoesDataset(data = core_data.tensors[0], targets=core_data.targets, transform=Joetransform)
+
+odds_testset = JoesDataset(data = odds_testing.tensors[0], targets=odds_testing.targets, transform=Joetransform)
+odds_testloader = DataLoader(odds_testset, batch_size=batch_size, shuffle=True)
 
 # Do Odds Only Model
 odds_dataloader = DataLoader(odds_dataset, batch_size=batch_size, shuffle=True)
